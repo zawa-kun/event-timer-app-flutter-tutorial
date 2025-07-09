@@ -1,6 +1,9 @@
 # event_timer_app
 
-A new Flutter project.
+Flutter学習用
+
+# 何をしたか
+- 通知機能の実装
 
 ## Getting Started
 
