@@ -1,27 +1,44 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 通知パッケージ
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 
 // アプリ全体で使うためmain関数の外で定義
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
+// ★追加: イベントを表現するデータクラス
+class AppEvent {
+  final int id;
+  final String title;
+  final String body;
+  final int hour;
+  final int minute;
+
+  const AppEvent({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.hour,
+    required this.minute,
+  });
+}
+
 // 通知の初期化を待てるようにするためmainは非同期関数
 void main() async {
-  // Flutterとネイティブコード間の通知が利用可能であることを保証。
-  // 通知のプラグインの初期化に必要
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 通知の初期化設定 (AndroidとiOS向け)
-  // Androidでは通知アイコンを用意する必要がある
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher'); // デフォルトのアイコン
+  tz.initializeTimeZones();
+  tz.setLocalLocation(tz.getLocation('Asia/Tokyo')); // 日本
 
-  // iOSではアラート、バッジ、サウンドの許可をユーザに要求するよう設定
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+
   const DarwinInitializationSettings initializationSettingsDarwin =
       DarwinInitializationSettings(
-    requestAlertPermission: true, // アラートの許可を要求
-    requestBadgePermission: true, // バッジの許可を要求
-    requestSoundPermission: true, // サウンドの許可を要求
+    requestAlertPermission: true,
+    requestBadgePermission: true,
+    requestSoundPermission: true,
   );
 
   final InitializationSettings initializationSettings = InitializationSettings(
@@ -29,29 +46,118 @@ void main() async {
     iOS: initializationSettingsDarwin,
   );
 
-  // 通知プラグインの初期化
   await flutterLocalNotificationsPlugin.initialize(
     initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse notificationResponse) async {
-      // 通知をタップしたときの処理（今回はシンプルにログ表示）
       debugPrint('notification payload: ${notificationResponse.payload}');
     },
   );
 
-  // Androidで通知許可を明示的に要求
-  // android/app/src/main/AndroidManifest.xmlで記述したが動作しなかったため.
-  final bool? result = await flutterLocalNotificationsPlugin
-    .resolvePlatformSpecificImplementation<
-    AndroidFlutterLocalNotificationsPlugin>()
-    ?.requestNotificationsPermission();
-  
-  if(result == true) {
-    debugPrint('Notification permission granted for Android.');
+  final bool? notificationsResult = await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.requestNotificationsPermission();
+
+  if (notificationsResult == true) {
+    debugPrint('通知の許可が与えられました。');
   } else {
-    debugPrint('Notification permission denied or not requested for Android.');
+    debugPrint('通知の許可が否認されました。');
+  }
+
+  final bool? exactAlarmResult = await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.requestExactAlarmsPermission();
+
+  if (exactAlarmResult == true) {
+    debugPrint('厳格なアラームの許可が与えられました。');
+  } else {
+    debugPrint('厳格なアラームの許可が否認されました。');
+  }
+
+  await flutterLocalNotificationsPlugin.cancelAll();
+
+  // ★修正: イベントデータのリストを定義
+  final List<AppEvent> appEvents = [
+    const AppEvent(
+      id: 0,
+      title: 'おねがい社長イベント通知',
+      body: '昼の部イベントの時間です！',
+      hour: 12,
+      minute: 0,
+    ),
+    const AppEvent(
+      id: 1,
+      title: 'おねがい社長イベント通知',
+      body: '夜の部イベントの時間です！',
+      hour: 18,
+      minute: 0,
+    ),
+    // ここに新しいイベントを追加できるようになります
+    // 例：const AppEvent(id: 2, title: '新しいイベント', body: '午後3時からのイベントです！', hour: 15, minute: 0),
+  ];
+
+  // ★修正: イベントリストをループして通知をスケジュール
+  for (var event in appEvents) {
+    await _scheduleDailyNotification(
+      id: event.id,
+      title: event.title,
+      body: event.body,
+      hour: event.hour,
+      minute: event.minute,
+    );
   }
 
   runApp(const MyApp());
+}
+
+Future<void> _scheduleDailyNotification({
+  required int id,
+  required String title,
+  required String body,
+  required int hour,
+  required int minute,
+}) async {
+  const AndroidNotificationDetails androidNotificationDetails =
+      AndroidNotificationDetails(
+          'daily notification channel id', 'Daily Notification', // チャンネル名
+          channelDescription: 'Daily event notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker');
+
+  const DarwinNotificationDetails darwinNotificationDetails =
+      DarwinNotificationDetails();
+
+  const NotificationDetails notificationDetails = NotificationDetails(
+    android: androidNotificationDetails,
+    iOS: darwinNotificationDetails,
+  );
+
+  await flutterLocalNotificationsPlugin.zonedSchedule(
+    id,
+    title,
+    body,
+    _nextInstanceOfTime(hour, minute),
+    notificationDetails,
+    androidScheduleMode: AndroidScheduleMode.alarmClock, // AlarmClockモード
+    uiLocalNotificationDateInterpretation:
+        UILocalNotificationDateInterpretation.absoluteTime,
+    matchDateTimeComponents: DateTimeComponents.time, // 毎日同じ時刻に繰り返す
+    payload: 'daily_event_payload',
+  );
+  debugPrint('Scheduled notification $id for $hour:$minute daily.');
+}
+
+tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
+  final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+  tz.TZDateTime scheduledDate =
+      tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+
+  if (scheduledDate.isBefore(now)) {
+    scheduledDate = scheduledDate.add(const Duration(days: 1));
+  }
+  return scheduledDate;
 }
 
 class MyApp extends StatelessWidget {
@@ -72,7 +178,6 @@ class MyApp extends StatelessWidget {
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
   final String title;
 
   @override
@@ -82,14 +187,33 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkPendingNotificationRequests();
+  }
+
+  Future<void> _checkPendingNotificationRequests() async {
+    final List<PendingNotificationRequest> pendingNotificationRequests =
+        await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+
+    debugPrint('--- 予定されたアラームリスト ---');
+    if (pendingNotificationRequests.isEmpty) {
+      debugPrint("予定された通知はありません");
+    } else {
+      for (var request in pendingNotificationRequests) {
+        debugPrint('ID: ${request.id}, Title: ${request.title}, Payload: ${request.payload}');
+      }
+    }
+  }
+
   void _incrementCounter() {
     setState(() {
       _counter++;
     });
-    _showNotification(); // ボタンを押したら通知を出す
+    _showNotification();
   }
 
-  // 通知を表示する関数
   Future<void> _showNotification() async {
     const AndroidNotificationDetails androidNotificationDetails =
         AndroidNotificationDetails('your channel id', 'your channel name',
@@ -104,14 +228,12 @@ class _MyHomePageState extends State<MyHomePage> {
     const NotificationDetails notificationDetails = NotificationDetails(
         android: androidNotificationDetails, iOS: darwinNotificationDetails);
 
-    // showメソッド
-    // 指定した内容（タイトル、本文、IDなど）で即座に通知を表示。
     await flutterLocalNotificationsPlugin.show(
-      0, // 通知ID
-      'おねがい社長 通知テスト', // 通知タイトル
-      'これはテスト通知です！アプリを閉じても届きます！', // 通知本文
+      0,
+      'おねがい社長 通知テスト',
+      'これはテスト通知です！アプリを閉じても届きます！',
       notificationDetails,
-      payload: 'item x', // 通知に付加するデータ
+      payload: 'item x',
     );
   }
 
@@ -140,7 +262,7 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: _incrementCounter,
         tooltip: 'Increment',
         child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      ),
     );
   }
 }
