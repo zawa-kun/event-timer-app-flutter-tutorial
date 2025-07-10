@@ -104,6 +104,8 @@ class _MyHomePageState extends State<MyHomePage> {
     const NotificationDetails notificationDetails = NotificationDetails(
         android: androidNotificationDetails, iOS: darwinNotificationDetails);
 
+    // showメソッド
+    // 指定した内容（タイトル、本文、IDなど）で即座に通知を表示。
     await flutterLocalNotificationsPlugin.show(
       0, // 通知ID
       'おねがい社長 通知テスト', // 通知タイトル

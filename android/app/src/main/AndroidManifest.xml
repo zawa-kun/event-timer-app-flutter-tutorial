@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <!-- 初回起動時に通知を表示 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <!-- Android13以降はアプリが通知を送信する際にユーザーからの明示的な許可が必要。これにより、システム許可ダイアログを表示するようになる。初回起動時に通知を表示 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" /> <!-- スケジュール通知を実装するために必要 -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
